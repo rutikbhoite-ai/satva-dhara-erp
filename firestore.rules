@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function profile() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function activeUser() {
+      return signedIn() && profile().data.isActive == true &&
+          profile().data.farmId is string && profile().data.farmId.size() > 0;
+    }
+    function sameFarm(data) { return activeUser() && data.farmId == profile().data.farmId; }
+    function validNewRecord() {
+      return sameFarm(request.resource.data) && request.resource.data.createdBy == request.auth.uid;
+    }
+    function validUpdate() {
+      return sameFarm(resource.data) && sameFarm(request.resource.data) &&
+          request.resource.data.farmId == resource.data.farmId &&
+          request.resource.data.createdBy == resource.data.createdBy;
+    }
+
+    // Provision users with the Admin SDK/Firestore Console; clients cannot set their own role/farm.
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update, delete: if false;
+    }
+
+    match /animals/{id} { allow read: if sameFarm(resource.data); allow create: if validNewRecord(); allow update: if validUpdate(); allow delete: if sameFarm(resource.data); }
+    match /milk_records/{id} { allow read: if sameFarm(resource.data); allow create: if validNewRecord(); allow update: if validUpdate(); allow delete: if sameFarm(resource.data); }
+    match /expenses/{id} { allow read: if sameFarm(resource.data); allow create: if validNewRecord(); allow update: if validUpdate(); allow delete: if sameFarm(resource.data); }
+    match /health_records/{id} { allow read: if sameFarm(resource.data); allow create: if validNewRecord(); allow update: if validUpdate(); allow delete: if sameFarm(resource.data); }
+    match /inventory/{id} { allow read: if sameFarm(resource.data); allow create: if validNewRecord(); allow update: if validUpdate(); allow delete: if sameFarm(resource.data); }
+    match /pregnancy_records/{id} { allow read: if sameFarm(resource.data); allow create: if validNewRecord(); allow update: if validUpdate(); allow delete: if sameFarm(resource.data); }
+
+    // Audit history is append-only.
+    match /audit_logs/{id} {
+      allow read: if sameFarm(resource.data);
+      allow create: if validNewRecord() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}

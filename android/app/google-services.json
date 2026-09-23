@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "78707370379",
+    "project_id": "satva-dhara-erp",
+    "storage_bucket": "satva-dhara-erp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:78707370379:android:46bf090e45230f3e76678e",
+        "android_client_info": {
+          "package_name": "com.example.satva_dhara_erp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAkjiouCRCuB2Ucr00BsgFFJr2uPvPQF9c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

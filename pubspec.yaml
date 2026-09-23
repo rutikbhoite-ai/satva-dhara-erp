@@ -1,0 +1,64 @@
+name: satva_dhara_erp
+description: "Satva Dhara Dairy Farm ERP Application"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # ... बाकीचे डिपेन्डेन्सीज ...
+  path_provider: ^2.1.3
+  # State Management & Routing
+  flutter_riverpod: ^2.5.1
+  go_router: ^17.4.0
+
+  # Firebase Core & Backend
+  firebase_core: ^4.13.0
+  cloud_firestore: ^6.8.0
+  firebase_auth: ^6.5.7
+  firebase_storage: ^13.4.6
+
+  # Local Storage & Connectivity
+  isar_community: ^3.3.2
+  isar_community_flutter_libs: ^3.3.2
+  shared_preferences: ^2.2.3
+  connectivity_plus: ^7.3.1
+  flutter_dotenv: ^6.0.1
+
+  # Models & Helpers
+  freezed_annotation: ^3.0.0
+  json_annotation: ^4.9.0
+
+  # PDF & Excel
+  pdf: ^3.10.8
+  printing: ^5.13.1
+  excel: ^4.0.3
+
+  # UI & Media
+  fl_chart: ^1.2.0
+  mobile_scanner: ^7.4.0
+  qr_flutter: ^4.1.0
+  cached_network_image: ^3.3.1
+  logger: ^2.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  isar_community_generator: ^3.3.2
+  build_runner: ^2.4.9
+  freezed: ^3.0.0
+  json_serializable: ^6.8.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/logo/logo.png
+    - assets/icons/
+    - assets/images/
+    - assets/logo/Windows App Icon/app_icon.png

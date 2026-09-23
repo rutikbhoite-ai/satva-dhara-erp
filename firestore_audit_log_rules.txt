@@ -1,0 +1,768 @@
+============================================================
+SATVA DHARA ERP
+FIRESTORE AUDIT LOG SECURITY RULES
+VERSION 4 — FINAL
+============================================================
+
+PURPOSE
+============================================================
+
+These rules secure the Version 4 Audit Log system.
+
+Audit logs are historical records of application activity.
+
+The security model ensures:
+
+- Authentication is required.
+- User profile must exist.
+- User must be active.
+- User must belong to a valid farm.
+- Users can read only logs belonging to their own farm.
+- A user cannot create a log for another farm.
+- A user cannot create a log using another user's identity.
+- Existing audit logs cannot be updated.
+- Existing audit logs cannot be deleted.
+- Audit log creation must contain the required V4 fields.
+- createdAt must be generated using Firestore server time.
+
+
+============================================================
+EXPECTED FIRESTORE STRUCTURE
+============================================================
+
+Collection:
+
+auditLogs/{auditLogId}
+
+
+V4 Audit Log document fields:
+
+{
+  "farmId": String,
+
+  "userId": String,
+  "userName": String,
+  "userEmail": String,
+  "userRole": String,
+
+  "module": String,
+  "action": String,
+
+  "entityType": String,
+  "entityId": String,
+
+  "summary": String,
+
+  "metadata": Map,
+
+  "createdAt": Timestamp
+}
+
+
+IMPORTANT:
+
+The Firestore document ID is:
+
+auditLogId
+
+It is NOT required to be stored again inside the document.
+
+Therefore the V4 AuditLogModel.toMap() does not write:
+
+"id"
+
+The document ID is available through:
+
+DocumentSnapshot.id
+
+
+============================================================
+USER PROFILE STRUCTURE
+============================================================
+
+Collection:
+
+users/{uid}
+
+
+Expected minimum profile fields:
+
+{
+  "uid": String,
+  "email": String,
+  "displayName": String,
+  "farmId": String,
+  "role": String,
+  "isActive": Boolean
+}
+
+
+============================================================
+SECURITY MODEL
+============================================================
+
+1. Authentication is required.
+
+2. A valid user profile must exist at:
+
+   users/{request.auth.uid}
+
+3. The user's profile must be active.
+
+4. The user's farmId is taken from:
+
+   users/{request.auth.uid}.farmId
+
+5. Audit logs are farm-scoped.
+
+6. A user can read only audit logs where:
+
+   auditLogs/{auditLogId}.farmId
+   ==
+   users/{request.auth.uid}.farmId
+
+7. A user cannot create an audit log for another farm.
+
+8. A user cannot create an audit log using another user's UID.
+
+9. Existing audit logs are immutable.
+
+10. UPDATE is always denied.
+
+11. DELETE is always denied.
+
+12. Audit log creation must use:
+
+   createdAt == request.time
+
+13. The audit log identity fields must match the authenticated
+    user's identity/profile.
+
+14. Unknown or malformed audit data should not be accepted.
+
+
+============================================================
+FIRESTORE RULES
+============================================================
+
+rules_version = '2';
+
+service cloud.firestore {
+
+  match /databases/{database}/documents {
+
+
+    // ========================================================
+    // AUTHENTICATION
+    // ========================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+
+    // ========================================================
+    // CURRENT USER PROFILE
+    // ========================================================
+
+    function userProfilePath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+
+    function hasUserProfile() {
+      return isSignedIn()
+        && exists(userProfilePath());
+    }
+
+
+    function currentUserProfile() {
+      return get(userProfilePath()).data;
+    }
+
+
+    // ========================================================
+    // ACTIVE USER
+    // ========================================================
+
+    function isActiveUser() {
+      return hasUserProfile()
+        && currentUserProfile().isActive == true;
+    }
+
+
+    // ========================================================
+    // USER FARM
+    // ========================================================
+
+    function userFarmId() {
+      return currentUserProfile().farmId;
+    }
+
+
+    // ========================================================
+    // USER ROLE
+    // ========================================================
+
+    function userRole() {
+      return currentUserProfile().role;
+    }
+
+
+    // ========================================================
+    // OWNER / ADMIN
+    // ========================================================
+
+    function isOwnerOrAdmin() {
+      return isActiveUser()
+        && (
+          userRole() == 'owner'
+          || userRole() == 'admin'
+        );
+    }
+
+
+    // ========================================================
+    // USERS
+    // ========================================================
+
+    match /users/{userId} {
+
+      /*
+       * User profile security is handled by the
+       * authentication/user-management architecture.
+       *
+       * These rules do not grant general profile writes.
+       */
+
+      allow read: if isSignedIn()
+        && request.auth.uid == userId;
+
+      allow create, update, delete: if false;
+    }
+
+
+    // ========================================================
+    // AUDIT LOGS
+    // ========================================================
+
+    match /auditLogs/{auditLogId} {
+
+
+      // ------------------------------------------------------
+      // READ
+      // ------------------------------------------------------
+
+      /*
+       * Active users can read only audit logs
+       * belonging to their own farm.
+       */
+
+      allow read: if isActiveUser()
+        && resource.data.farmId == userFarmId();
+
+
+      // ------------------------------------------------------
+      // CREATE
+      // ------------------------------------------------------
+
+      /*
+       * AuditLogService creates audit records through the
+       * authenticated Firebase client.
+       *
+       * Firestore rules therefore validate the complete
+       * identity and farm information here.
+       *
+       * The client cannot:
+       *
+       * - select another farm
+       * - impersonate another user
+       * - create an inactive-user log
+       * - submit an arbitrary createdAt timestamp
+       */
+
+      allow create: if isActiveUser()
+
+        // ----------------------------------------------------
+        // FARM
+        // ----------------------------------------------------
+
+        && request.resource.data.farmId is string
+
+        && request.resource.data.farmId == userFarmId()
+
+        && request.resource.data.farmId != ''
+
+
+        // ----------------------------------------------------
+        // USER IDENTITY
+        // ----------------------------------------------------
+
+        && request.resource.data.userId is string
+
+        && request.resource.data.userId == request.auth.uid
+
+        && request.resource.data.userName is string
+
+        && request.resource.data.userEmail is string
+
+        && request.resource.data.userRole is string
+
+
+        // ----------------------------------------------------
+        // USER ROLE CONSISTENCY
+        // ----------------------------------------------------
+
+        && request.resource.data.userRole
+            == currentUserProfile().role
+
+
+        // ----------------------------------------------------
+        // MODULE
+        // ----------------------------------------------------
+
+        && request.resource.data.module is string
+
+        && request.resource.data.module != ''
+
+
+        // ----------------------------------------------------
+        // ACTION
+        // ----------------------------------------------------
+
+        && request.resource.data.action is string
+
+        && request.resource.data.action != ''
+
+
+        // ----------------------------------------------------
+        // ENTITY
+        // ----------------------------------------------------
+
+        && request.resource.data.entityType is string
+
+        && request.resource.data.entityId is string
+
+
+        // ----------------------------------------------------
+        // SUMMARY
+        // ----------------------------------------------------
+
+        && request.resource.data.summary is string
+
+        && request.resource.data.summary != ''
+
+
+        // ----------------------------------------------------
+        // METADATA
+        // ----------------------------------------------------
+
+        && request.resource.data.metadata is map
+
+
+        // ----------------------------------------------------
+        // CREATED AT
+        // ----------------------------------------------------
+
+        /*
+         * AuditLogService must use:
+
+         * FieldValue.serverTimestamp()
+
+         * Firestore evaluates the server timestamp as
+         * request.time.
+         */
+
+        && request.resource.data.createdAt == request.time;
+
+
+      // ------------------------------------------------------
+      // UPDATE
+      // ------------------------------------------------------
+
+      /*
+       * Audit logs are immutable.
+
+       * No user can modify:
+       *
+       * - farm
+       * - user
+       * - action
+       * - module
+       * - entity
+       * - summary
+       * - metadata
+       * - createdAt
+       */
+
+      allow update: if false;
+
+
+      // ------------------------------------------------------
+      // DELETE
+      // ------------------------------------------------------
+
+      /*
+       * Audit history cannot be deleted through the client.
+       */
+
+      allow delete: if false;
+    }
+
+
+    // ========================================================
+    // DEFAULT DENY
+    // ========================================================
+
+    /*
+     * Every collection/document not explicitly permitted
+     * above is denied.
+     */
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+
+============================================================
+IMPORTANT IMPLEMENTATION NOTES
+============================================================
+
+
+1. CREATED AT
+============================================================
+
+AuditLogService must create the record using:
+
+createdAt: FieldValue.serverTimestamp()
+
+
+Do NOT use:
+
+DateTime.now()
+
+
+for the Firestore audit-log write if the rules above are used.
+
+
+The rule checks:
+
+request.resource.data.createdAt == request.time
+
+
+This prevents the client from submitting an arbitrary timestamp.
+
+
+------------------------------------------------------------
+
+
+2. FARM ID
+============================================================
+
+The application must obtain farmId from the authenticated
+user's profile.
+
+Expected profile:
+
+users/{uid}
+
+farmId
+
+
+The user must NOT be able to create:
+
+farmId: "another_farm"
+
+
+because the rule checks:
+
+request.resource.data.farmId == userFarmId()
+
+
+------------------------------------------------------------
+
+
+3. USER ID
+============================================================
+
+The following must always match:
+
+request.resource.data.userId
+==
+request.auth.uid
+
+
+This prevents one authenticated user from creating an audit
+record pretending to belong to another user.
+
+
+------------------------------------------------------------
+
+
+4. USER ROLE
+============================================================
+
+The audit log stores:
+
+userRole
+
+
+The rule verifies:
+
+request.resource.data.userRole
+==
+currentUserProfile().role
+
+
+Therefore a user cannot simply submit:
+
+userRole: "owner"
+
+
+while their actual profile says:
+
+role: "staff"
+
+
+------------------------------------------------------------
+
+
+5. SUMMARY
+============================================================
+
+V4 uses:
+
+summary
+
+
+NOT:
+
+description
+
+
+The V4 AuditLogModel uses:
+
+final String summary;
+
+
+Therefore the Firestore rules must also validate:
+
+request.resource.data.summary
+
+
+------------------------------------------------------------
+
+
+6. DOCUMENT ID
+============================================================
+
+The Firestore document ID is:
+
+auditLogId
+
+
+It does not need to be duplicated as:
+
+id
+
+
+inside the document.
+
+
+AuditLogModel receives it from:
+
+DocumentSnapshot.id
+
+
+------------------------------------------------------------
+
+
+7. IMMUTABILITY
+============================================================
+
+Once created:
+
+UPDATE = DENIED
+
+DELETE = DENIED
+
+
+This is intentional.
+
+
+Audit logs are historical records and should not be altered
+after creation.
+
+
+------------------------------------------------------------
+
+
+8. FARM-SCOPED READ ACCESS
+============================================================
+
+A user can read:
+
+auditLogs/{auditLogId}
+
+
+only when:
+
+auditLog.farmId
+==
+currentUser.farmId
+
+
+Therefore users from Farm A cannot read logs from Farm B.
+
+
+------------------------------------------------------------
+
+
+9. INACTIVE USERS
+============================================================
+
+If:
+
+users/{uid}.isActive == false
+
+
+then:
+
+Audit Log READ = DENIED
+
+Audit Log CREATE = DENIED
+
+
+This prevents disabled users from accessing or creating
+audit records.
+
+
+------------------------------------------------------------
+
+
+10. ADMIN / OWNER
+============================================================
+
+The helper:
+
+isOwnerOrAdmin()
+
+
+is intentionally available for future expansion.
+
+
+The current V4 design keeps Audit Log access
+farm-scoped for all active users.
+
+
+If later we want:
+
+Owner:
+  Full farm audit visibility
+
+Admin:
+  Full farm audit visibility
+
+Manager:
+  Limited audit visibility
+
+Staff:
+  Own/limited audit visibility
+
+that can be implemented as a separate V5 security decision.
+
+
+------------------------------------------------------------
+
+
+11. CLIENT SECURITY
+============================================================
+
+Never use:
+
+allow read, write: if true;
+
+
+Never use:
+
+allow read, write: if request.auth != null;
+
+
+for audit logs.
+
+
+Authentication alone does NOT provide farm isolation.
+
+
+The rules must always validate:
+
+authenticated user
++
+active profile
++
+farmId
++
+userId
++
+role
++
+required audit fields
+
+
+------------------------------------------------------------
+
+
+12. AUDIT LOG SERVICE
+============================================================
+
+AuditLogService is responsible for constructing valid
+AuditLogModel records.
+
+
+Firestore Rules are the final security boundary.
+
+
+Application validation improves usability.
+
+
+Firestore Rules enforce security.
+
+
+Both layers are required.
+
+
+============================================================
+VERSION 4 FINAL SECURITY POLICY
+============================================================
+
+AUTHENTICATION
+    ↓
+USER PROFILE
+    ↓
+ACTIVE USER
+    ↓
+FARM VALIDATION
+    ↓
+USER IDENTITY VALIDATION
+    ↓
+ROLE VALIDATION
+    ↓
+AUDIT FIELD VALIDATION
+    ↓
+SERVER TIMESTAMP VALIDATION
+    ↓
+CREATE AUDIT LOG
+
+
+AFTER CREATION:
+
+UPDATE  → DENIED
+
+DELETE  → DENIED
+
+
+============================================================
+END OF VERSION 4 FINAL AUDIT LOG SECURITY RULES
+============================================================
