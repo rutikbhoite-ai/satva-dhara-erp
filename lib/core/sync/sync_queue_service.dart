@@ -423,6 +423,73 @@ class SyncQueueService {
   }
 
   // ============================================================
+  // CONFLICT OPERATIONS
+  // ============================================================
+
+  /// Returns unresolved sync conflicts for the current
+  /// authenticated user/farm scoped Isar database.
+  Future<List<SyncOperationModel>> getConflictOperations() async {
+    final isar = await IsarService.instance;
+
+    final operations = await isar.syncOperationModels
+        .filter()
+        .statusEqualTo('conflict')
+        .findAll();
+
+    operations.sort(
+      (a, b) => b.createdAt.compareTo(a.createdAt),
+    );
+
+    return operations;
+  }
+
+  /// Moves a conflict back to the normal sync queue.
+  ///
+  /// This is used when the user wants the sync engine to try the
+  /// operation again after reviewing the conflict.
+  Future<bool> retryConflict(int operationId) async {
+    final isar = await IsarService.instance;
+
+    final operation =
+        await isar.syncOperationModels.get(operationId);
+
+    if (operation == null || operation.status != 'conflict') {
+      return false;
+    }
+
+    operation.status = 'pending';
+    operation.nextRetryAt = DateTime.now();
+    operation.lastError = null;
+
+    await isar.writeTxn(() async {
+      await isar.syncOperationModels.put(operation);
+    });
+
+    return true;
+  }
+
+  /// Dismisses a conflict after explicit user confirmation.
+  ///
+  /// The local conflict queue entry is removed. This does not alter
+  /// the business record or remote Firestore document.
+  Future<bool> dismissConflict(int operationId) async {
+    final isar = await IsarService.instance;
+
+    final operation =
+        await isar.syncOperationModels.get(operationId);
+
+    if (operation == null || operation.status != 'conflict') {
+      return false;
+    }
+
+    await isar.writeTxn(() async {
+      await isar.syncOperationModels.delete(operationId);
+    });
+
+    return true;
+  }
+
+  // ============================================================
   // PROCESSING LOCK
   // ============================================================
 

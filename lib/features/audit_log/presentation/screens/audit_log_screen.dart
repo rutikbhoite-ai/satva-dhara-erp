@@ -255,87 +255,6 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
   }
 
   // ============================================================
-  // DELETE
-  // ============================================================
-
-  Future<void> _deleteLog(
-    AuditLogModel log,
-  ) async {
-    final confirmed =
-        await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text(
-            'Audit Log Delete करायचा?',
-          ),
-          content: Text(
-            'हा audit record कायमचा delete होईल.\n\n'
-            '${log.summary}',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () =>
-                  Navigator.pop(
-                dialogContext,
-                false,
-              ),
-              child: const Text('रद्द'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor:
-                    AppColors.error,
-              ),
-              onPressed: () =>
-                  Navigator.pop(
-                dialogContext,
-                true,
-              ),
-              child: const Text(
-                'Delete',
-              ),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true) return;
-
-    final logId = log.id;
-
-    if (logId == null || logId.trim().isEmpty) {
-      if (!mounted) return;
-
-      _showMessage(
-        'Audit log ID उपलब्ध नाही.',
-        isError: true,
-      );
-
-      return;
-    }
-
-    final success =
-        await _service.deleteLog(logId);
-
-    if (!mounted) return;
-
-    if (success) {
-      _showMessage(
-        'Audit log delete झाला.',
-      );
-
-      await _loadLogs();
-    } else {
-      _showMessage(
-        'Audit log delete करता आला नाही.',
-        isError: true,
-      );
-    }
-  }
-
-  // ============================================================
   // BUILD
   // ============================================================
 
@@ -471,9 +390,6 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                 const SettingsScreen(),
           ),
         );
-        break;
-      case 9:
-        context.go(AppRoutes.auditLog,);
         break;
     }
   }
@@ -1008,9 +924,6 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
               DataColumn(
                 label: Text('ENTITY'),
               ),
-              DataColumn(
-                label: Text(''),
-              ),
             ],
             rows: _filteredLogs
                 .map(
@@ -1115,26 +1028,6 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                             color:
                                 AppColors
                                     .textSecondary,
-                          ),
-                        ),
-                      ),
-                      DataCell(
-                        IconButton(
-                          tooltip:
-                              'Delete',
-                          onPressed:
-                              () =>
-                                  _deleteLog(
-                            log,
-                          ),
-                          icon:
-                              const Icon(
-                            Icons
-                                .delete_outline,
-                            size: 18,
-                            color:
-                                AppColors
-                                    .error,
                           ),
                         ),
                       ),
@@ -1512,23 +1405,6 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                       ),
                     ),
                   ],
-                ),
-              ),
-              IconButton(
-                visualDensity:
-                    VisualDensity.compact,
-                tooltip: 'Delete',
-                onPressed:
-                    () => _deleteLog(
-                  log,
-                ),
-                icon:
-                    const Icon(
-                  Icons
-                      .delete_outline,
-                  size: 18,
-                  color:
-                      AppColors.error,
                 ),
               ),
             ],

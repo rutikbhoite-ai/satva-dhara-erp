@@ -112,12 +112,7 @@ class AuditLogService {
           await _firestore
               .collection(_collection)
               .add(
-                {
-                  ...log.toMap(),
-                  // Required by the append-only Firestore rule; never trust a
-                  // caller-supplied creator value.
-                  'createdBy': user.uid,
-                },
+                log.toMap(),
               );
 
       debugPrint(
@@ -484,123 +479,27 @@ class AuditLogService {
   }
 
   // ============================================================
-  // DELETE SINGLE LOG
+  // IMMUTABILITY
   // ============================================================
   //
-  // Audit logs are normally protected.
-  // Only Admin / Owner can delete.
+  // Audit records are intentionally immutable. Delete operations
+  // are no longer supported by the application service. The
+  // corresponding UI action will be removed in the next step.
+  // Firestore rules must also deny delete/update operations.
   // ============================================================
 
-  Future<bool> deleteLog(
-    String logId,
-  ) async {
-    final cleanId =
-        logId.trim();
-
-    if (cleanId.isEmpty) {
-      return false;
-    }
-
-    try {
-      final profile =
-          await _authProfileService
-              .getCurrentProfile();
-
-      if (profile == null ||
-          !profile.isAdmin) {
-        debugPrint(
-          'AuditLogService: Delete denied. '
-          'Admin/Owner permission required.',
-        );
-
-        return false;
-      }
-
-      await _firestore
-          .collection(_collection)
-          .doc(cleanId)
-          .delete();
-
-      debugPrint(
-        'Audit log deleted: $cleanId',
-      );
-
-      return true;
-    } catch (e, stackTrace) {
-      debugPrint(
-        'AuditLogService: deleteLog failed: $e',
-      );
-
-      debugPrintStack(
-        stackTrace: stackTrace,
-      );
-
-      return false;
-    }
+  Future<bool> deleteLog(String logId) async {
+    debugPrint(
+      'AuditLogService: Audit logs are immutable. Delete denied.',
+    );
+    return false;
   }
 
-  // ============================================================
-  // DELETE MULTIPLE LOGS
-  // ============================================================
-
-  Future<bool> deleteLogs(
-    List<String> logIds,
-  ) async {
-    if (logIds.isEmpty) {
-      return true;
-    }
-
-    try {
-      final profile =
-          await _authProfileService
-              .getCurrentProfile();
-
-      if (profile == null ||
-          !profile.isAdmin) {
-        debugPrint(
-          'AuditLogService: Bulk delete denied.',
-        );
-
-        return false;
-      }
-
-      final batch =
-          _firestore.batch();
-
-      for (final logId in logIds) {
-        final cleanId =
-            logId.trim();
-
-        if (cleanId.isEmpty) {
-          continue;
-        }
-
-        final reference =
-            _firestore
-                .collection(_collection)
-                .doc(cleanId);
-
-        batch.delete(reference);
-      }
-
-      await batch.commit();
-
-      debugPrint(
-        'Audit logs deleted: '
-        '${logIds.length}',
-      );
-
-      return true;
-    } catch (e, stackTrace) {
-      debugPrint(
-        'AuditLogService: deleteLogs failed: $e',
-      );
-
-      debugPrintStack(
-        stackTrace: stackTrace,
-      );
-
-      return false;
-    }
+  Future<bool> deleteLogs(List<String> logIds) async {
+    debugPrint(
+      'AuditLogService: Audit logs are immutable. Bulk delete denied.',
+    );
+    return false;
   }
+
 }

@@ -142,10 +142,13 @@ class CentralSyncEngine {
         'V3 sync queue is empty.',
       );
 
-      // No local queue work remains. Continue to the remote pull gate below
-      // so that login/app-start sync can also refresh local data from Firestore.
-      // The same pending/failed/conflict checks below still protect unsynced
-      // local work from being replaced by a remote snapshot.
+      return const SyncEngineResult(
+        processed: 0,
+        succeeded: 0,
+        failed: 0,
+        conflicts: 0,
+        skipped: 0,
+      );
     }
 
     int processed = 0;

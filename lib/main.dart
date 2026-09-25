@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app_theme.dart';
 import 'core/network/connectivity_service.dart';
+import 'features/auth/data/auth_profile_service.dart';
 import 'core/sync/central_sync_engine.dart';
 import 'core/sync/sync_queue_service.dart';
 import 'database/isar_service.dart';
@@ -37,11 +38,12 @@ Future<void> main() async {
   };
 
   // ============================================================
-  // FIREBASE + ISAR + CONNECTIVITY
+  // FIREBASE + CONNECTIVITY
   // ============================================================
   //
-  // These services are independent during startup.
-  // Initialize them concurrently to reduce cold-start time.
+  // Firebase and connectivity are independent during startup.
+  // The Isar database is initialized lazily after a valid user/farm
+  // profile is available, so local data is always account-scoped.
   //
   // ConnectivityService is initialized before the sync
   // lifecycle starts so CentralSyncEngine always receives
@@ -49,29 +51,23 @@ Future<void> main() async {
   // ============================================================
 
   bool firebaseInitialized = false;
-  bool isarInitialized = false;
   bool connectivityInitialized = false;
 
   final initializationResults =
       await Future.wait<bool>([
     _initializeFirebase(),
-    _initializeIsar(),
     _initializeConnectivity(),
   ]);
 
   firebaseInitialized =
       initializationResults[0];
 
-  isarInitialized =
-      initializationResults[1];
-
   connectivityInitialized =
-      initializationResults[2];
+      initializationResults[1];
 
   debugPrint(
     'Startup initialization completed. '
     'Firebase=$firebaseInitialized, '
-    'Isar=$isarInitialized, '
     'Connectivity=$connectivityInitialized',
   );
 
@@ -88,8 +84,6 @@ Future<void> main() async {
       child: SatvaDharaApp(
         firebaseInitialized:
             firebaseInitialized,
-        isarInitialized:
-            isarInitialized,
       ),
     ),
   );
@@ -99,7 +93,6 @@ Future<void> main() async {
   // ============================================================
 
   if (firebaseInitialized &&
-      isarInitialized &&
       connectivityInitialized) {
     WidgetsBinding.instance.addPostFrameCallback(
       (_) {
@@ -128,32 +121,6 @@ Future<bool> _initializeFirebase() async {
   } catch (e, stackTrace) {
     debugPrint(
       'Firebase initialization failed: $e',
-    );
-
-    debugPrintStack(
-      stackTrace: stackTrace,
-    );
-
-    return false;
-  }
-}
-
-// ============================================================
-// ISAR INITIALIZATION
-// ============================================================
-
-Future<bool> _initializeIsar() async {
-  try {
-    await IsarService.instance;
-
-    debugPrint(
-      'Isar database initialized successfully.',
-    );
-
-    return true;
-  } catch (e, stackTrace) {
-    debugPrint(
-      'Isar DB initialization failed: $e',
     );
 
     debugPrintStack(
@@ -230,6 +197,10 @@ class SyncLifecycleManager {
   bool _syncInProgress = false;
 
   bool _syncRequestedAgain = false;
+
+  Completer<void>? _syncCompletion;
+
+  int _sessionGeneration = 0;
 
   // ============================================================
   // START
@@ -336,10 +307,37 @@ class SyncLifecycleManager {
   void _handleAuthStateChanged(
     User? user,
   ) {
+    _sessionGeneration++;
+    final generation = _sessionGeneration;
+
+    _handleUserSessionChanged(
+      user,
+      generation: generation,
+    );
+  }
+
+  Future<void> _handleUserSessionChanged(
+    User? user, {
+    required int generation,
+  }) async {
     if (user == null) {
+      // Never close Isar while a sync transaction may still be using
+      // it. Wait for the active lifecycle sync to finish first.
+      final activeSync = _syncCompletion;
+
+      if (activeSync != null) {
+        await activeSync.future;
+      }
+
+      if (generation != _sessionGeneration) {
+        return;
+      }
+
+      await IsarService.close();
+
       debugPrint(
         'No authenticated user. '
-        'V3 sync waiting for login.',
+        'Scoped local database closed; V3 sync waiting for login.',
       );
 
       return;
@@ -350,9 +348,54 @@ class SyncLifecycleManager {
       '${user.uid}',
     );
 
-    _syncNow(
-      reason: 'authentication',
-    );
+    try {
+      final profile =
+          await AuthProfileService.instance.getCurrentProfile();
+
+      if (generation != _sessionGeneration) {
+        return;
+      }
+
+      if (profile == null || !profile.canUseApplication) {
+        await IsarService.close();
+
+        debugPrint(
+          'Authenticated user does not have a valid active farm profile. '
+          'Scoped local database remains closed.',
+        );
+
+        return;
+      }
+
+      if (generation != _sessionGeneration) {
+        return;
+      }
+
+      await IsarService.initializeForScope(
+        uid: profile.uid,
+        farmId: profile.farmId,
+      );
+
+      if (generation != _sessionGeneration) {
+        return;
+      }
+
+      await _syncNow(
+        reason: 'authentication',
+      );
+    } catch (e, stackTrace) {
+      if (generation == _sessionGeneration) {
+        await IsarService.close();
+      }
+
+      debugPrint(
+        'User session initialization failed: $e',
+      );
+
+      debugPrintStack(
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   // ============================================================
@@ -411,6 +454,8 @@ class SyncLifecycleManager {
     }
 
     _syncInProgress = true;
+    final completion = Completer<void>();
+    _syncCompletion = completion;
 
     try {
       var currentReason = reason;
@@ -494,6 +539,14 @@ class SyncLifecycleManager {
     } finally {
       _syncInProgress = false;
       _syncRequestedAgain = false;
+
+      if (!completion.isCompleted) {
+        completion.complete();
+      }
+
+      if (identical(_syncCompletion, completion)) {
+        _syncCompletion = null;
+      }
     }
   }
 
@@ -531,18 +584,15 @@ class SatvaDharaApp extends StatelessWidget {
   const SatvaDharaApp({
     super.key,
     required this.firebaseInitialized,
-    required this.isarInitialized,
   });
 
   final bool firebaseInitialized;
-  final bool isarInitialized;
 
   @override
   Widget build(
     BuildContext context,
   ) {
-    if (!firebaseInitialized ||
-        !isarInitialized) {
+    if (!firebaseInitialized) {
       return MaterialApp(
         title: 'Satva Dhara ERP',
         debugShowCheckedModeBanner: false,

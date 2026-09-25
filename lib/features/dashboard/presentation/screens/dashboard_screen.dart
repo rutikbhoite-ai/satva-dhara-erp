@@ -113,9 +113,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       double milkSum = 0.0;
       double incomeSum = 0.0;
       double expenseSum = 0.0;
+      double healthExpenseSum = 0.0;
       double morningMilk = 0.0;
       double eveningMilk = 0.0;
       double monthlyExpense = 0.0;
+      double monthlyHealthExpense = 0.0;
       final expenseByCategory = <String, double>{};
       int milkingAnimals = 0;
       int dryAnimals = 0;
@@ -178,7 +180,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       }
 
+      // Health / treatment costs are part of the ERP's total expense.
+      // Keep the category breakdown limited to general expenses.
+      for (final health in healthRecords) {
+        if (_isSameDay(health.date, now)) {
+          healthExpenseSum += health.cost;
+        }
+
+        if (health.date.year == now.year &&
+            health.date.month == now.month) {
+          monthlyHealthExpense += health.cost;
+        }
+      }
+
+      for (final health in healthRecords) {
+        final daysAgo = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).difference(
+          DateTime(health.date.year, health.date.month, health.date.day),
+        ).inDays;
+
+        if (daysAgo >= 0 && daysAgo < 7) {
+          expenseTrend[6 - daysAgo] += health.cost;
+        }
+      }
+
       for (final animal in animals) {
+        // Keep operational animal KPIs consistent with Reports:
+        // only Active animals are included in milking/dry counts.
+        if (animal.status != 'Active') {
+          continue;
+        }
+
         if (animal.isMilking) {
           milkingAnimals++;
         } else {
@@ -250,8 +285,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _morningMilkLiters = morningMilk;
         _eveningMilkLiters = eveningMilk;
         _todayIncome = incomeSum;
-        _todayExpense = expenseSum;
-        _monthlyExpense = monthlyExpense;
+        _todayExpense = expenseSum + healthExpenseSum;
+        _monthlyExpense = monthlyExpense + monthlyHealthExpense;
         for (var i = 0; i < 7; i++) {
           _last7DayMilk[i] = milkTrend[i];
           _last7DayExpense[i] = expenseTrend[i];
@@ -1182,7 +1217,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _buildMetricCard(
           title: 'आजचा खर्च',
           value: '₹ ${_todayExpense.toStringAsFixed(0)}',
-          subtitle: 'Total Expense',
+          subtitle: 'General + Health',
           icon: Icons.trending_down_rounded,
           color: AppColors.error,
         ),
@@ -1190,8 +1225,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           title: 'या महिन्याचा खर्च',
           value: '₹ ${_monthlyExpense.toStringAsFixed(0)}',
           subtitle: _topExpenseCategory == '—'
-              ? 'Monthly Expense'
-              : 'Top: $_topExpenseCategory',
+              ? 'General + Health'
+              : 'Top General: $_topExpenseCategory',
           icon: Icons.calendar_month_outlined,
           color: AppColors.expense,
         ),
@@ -1400,7 +1435,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     SizedBox(height: 3),
                     Text(
-                      'Milk collection आणि खर्चाचा तुलनात्मक आढावा',
+                      'Milk collection आणि एकूण खर्चाचा तुलनात्मक आढावा',
                       style: TextStyle(
                         fontSize: 9.5,
                         color: AppColors.textTertiary,
@@ -1416,7 +1451,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(width: 12),
               _trendLegendDot(
                 color: AppColors.expense,
-                label: 'खर्च',
+                label: 'खर्च (एकूण)',
               ),
             ],
           ),
@@ -1576,7 +1611,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildExpenseSnapshot() {
     return _buildDashboardPanel(
       title: 'खर्चाचा आढावा',
-      subtitle: 'Current Month Snapshot',
+      subtitle: 'General + Health / Treatment',
       icon: Icons.account_balance_wallet_outlined,
       color: AppColors.expense,
       child: Row(
@@ -1601,7 +1636,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: _buildMiniStat(
-              'Top Category',
+              'Top General Category',
               _topExpenseCategory,
               Icons.category_outlined,
               AppColors.warning,

@@ -8,6 +8,7 @@ import '../../../../config/app_constants.dart';
 import '../../../../database/isar_service.dart';
 import '../../../../routing/routes.dart';
 import '../../../../shared/widgets/desktop_app_shell.dart';
+import 'sync_conflicts_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -196,6 +197,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
           _buildBackupCard(),
           const SizedBox(height: 16),
+          _buildSyncConflictsCard(),
+          const SizedBox(height: 16),
           _buildLogoutCard(),
           const SizedBox(height: 22),
           _buildAppInfo(),
@@ -248,6 +251,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Column(
                         children: [
                           _buildDesktopBackupCard(),
+                          const SizedBox(height: 16),
+                          _buildDesktopSyncConflictsCard(),
                           const SizedBox(height: 16),
                           _buildDesktopLogoutCard(),
                           const SizedBox(height: 16),
@@ -532,6 +537,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildDesktopSyncConflictsCard() {
+    return _desktopActionCard(
+      icon: Icons.sync_problem_rounded,
+      iconColor: AppColors.error,
+      title: 'Sync Conflicts',
+      subtitle: 'Review unresolved offline sync conflicts and retry or dismiss them.',
+      action: OutlinedButton.icon(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const SyncConflictsScreen(),
+            ),
+          );
+        },
+        icon: const Icon(Icons.sync_problem_rounded, size: 16),
+        label: const Text('Review Conflicts'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.error,
+          side: BorderSide(
+            color: AppColors.error.withValues(alpha: 0.35),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDesktopLogoutCard() {
     return _desktopActionCard(
       icon: Icons.logout_rounded,
@@ -812,6 +843,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onPressed: _createLocalBackup,
                 child: const Text('बॅकअप घ्या'),
               ),
+      ),
+    );
+  }
+
+  Widget _buildSyncConflictsCard() {
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 8,
+        ),
+        leading: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: AppColors.error.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            Icons.sync_problem_rounded,
+            color: AppColors.error,
+          ),
+        ),
+        title: const Text(
+          'Sync Conflicts',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: const Text(
+          'अपूर्ण sync conflicts तपासा, Retry किंवा Dismiss करा',
+        ),
+        trailing: OutlinedButton.icon(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const SyncConflictsScreen(),
+              ),
+            );
+          },
+          icon: const Icon(Icons.arrow_forward_rounded, size: 17),
+          label: const Text('Open'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.error,
+            side: BorderSide(
+              color: AppColors.error.withValues(alpha: 0.35),
+            ),
+          ),
+        ),
       ),
     );
   }

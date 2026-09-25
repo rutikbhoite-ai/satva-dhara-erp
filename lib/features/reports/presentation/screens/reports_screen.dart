@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -96,6 +97,7 @@ class _ReportsScreenState
   double _totalMilk = 0;
   double _totalIncome = 0;
   double _totalExpense = 0;
+  double _generalExpense = 0;
   double _healthExpense = 0;
 
   int _animalCount = 0;
@@ -272,8 +274,9 @@ class _ReportsScreenState
       setState(() {
         _totalMilk = totalMilk;
         _totalIncome = totalIncome;
-        _totalExpense = totalExpense;
+        _generalExpense = totalExpense;
         _healthExpense = healthExpense;
+        _totalExpense = totalExpense + healthExpense;
 
         _animalCount =
             animalData.length;
@@ -497,10 +500,11 @@ class _ReportsScreenState
   }
 
   Widget _buildIncomeExpenseCard() {
+    final netProfit = _totalIncome - _totalExpense;
     final entries = <String, double>{
       'उत्पन्न': _totalIncome,
-      'खर्च': _totalExpense,
-      'निव्वळ': (_totalIncome - _totalExpense).abs(),
+      'एकूण खर्च': _totalExpense,
+      'निव्वळ': netProfit.abs(),
     };
 
     return _sectionCard(
@@ -516,7 +520,7 @@ class _ReportsScreenState
           ),
           const SizedBox(height: 12),
           _horizontalBar(
-            label: 'खर्च',
+            label: 'एकूण खर्च',
             value: _totalExpense,
             maxValue: _maxValue(entries.values),
             color: AppColors.error,
@@ -524,14 +528,13 @@ class _ReportsScreenState
           const SizedBox(height: 12),
           _horizontalBar(
             label:
-                _totalIncome >= _totalExpense
+                netProfit >= 0
                     ? 'निव्वळ नफा'
                     : 'निव्वळ तोटा',
-            value:
-                (_totalIncome - _totalExpense).abs(),
+            value: netProfit.abs(),
             maxValue: _maxValue(entries.values),
             color:
-                _totalIncome >= _totalExpense
+                netProfit >= 0
                     ? AppColors.primary
                     : AppColors.warning,
           ),
@@ -543,8 +546,8 @@ class _ReportsScreenState
   Widget _buildExpenseCategoryCard() {
     if (_expenseByCategory.isEmpty) {
       return _sectionCard(
-        title: 'खर्चाचे प्रकार',
-        subtitle: 'Expense Category Breakdown',
+        title: 'सामान्य खर्चाचे प्रकार',
+        subtitle: 'General Expense Category Breakdown',
         child: _emptyReportState(
           'निवडलेल्या कालावधीत खर्च नोंद उपलब्ध नाही.',
         ),
@@ -579,7 +582,7 @@ class _ReportsScreenState
             ),
           const SizedBox(height: 2),
           _miniSummaryRow(
-            'एकूण खर्च',
+            'सामान्य खर्च एकूण',
             '₹ ${total.toStringAsFixed(2)}',
             AppColors.error,
           ),
@@ -615,9 +618,19 @@ class _ReportsScreenState
             AppColors.secondary,
           ),
           _miniSummaryRow(
+            'सामान्य खर्च',
+            '₹ ${_generalExpense.toStringAsFixed(2)}',
+            AppColors.error,
+          ),
+          _miniSummaryRow(
             'आरोग्य / उपचार खर्च',
             '₹ ${_healthExpense.toStringAsFixed(2)}',
             AppColors.warning,
+          ),
+          _miniSummaryRow(
+            'एकूण खर्च',
+            '₹ ${_totalExpense.toStringAsFixed(2)}',
+            AppColors.error,
           ),
           _miniSummaryRow(
             'Low Stock Items',
@@ -979,11 +992,19 @@ class _ReportsScreenState
     });
 
     try {
-      _pdfRegularFont =
-          await PdfGoogleFonts.notoSansDevanagariRegular();
+      // Load the Devanagari fonts from bundled app assets.
+      // This is intentionally offline-safe: no Google Fonts/network
+      // request is required when generating a PDF.
+      final regularFontData = await rootBundle.load(
+        'assets/fonts/NotoSansDevanagari-Regular.ttf',
+      );
 
-      _pdfBoldFont =
-          await PdfGoogleFonts.notoSansDevanagariBold();
+      final boldFontData = await rootBundle.load(
+        'assets/fonts/NotoSansDevanagari-Bold.ttf',
+      );
+
+      _pdfRegularFont = pw.Font.ttf(regularFontData);
+      _pdfBoldFont = pw.Font.ttf(boldFontData);
 
       final pdf = pw.Document(
         title: 'Satva Dhara ERP - Farm Report',
@@ -1079,8 +1100,8 @@ class _ReportsScreenState
                       isProfit ? 'निव्वळ नफा' : 'निव्वळ तोटा',
                       '₹ ${netProfit.abs().toStringAsFixed(0)}',
                       isProfit
-                          ? 'Income − Expense'
-                          : 'Expense − Income',
+                          ? 'Income − (General + Health Expense)'
+                          : '(General + Health Expense) − Income',
                       isProfit
                           ? PdfColors.teal
                           : PdfColors.orange,
@@ -1161,7 +1182,7 @@ class _ReportsScreenState
 
               _pdfSectionHeader(
                 'FINANCIAL SNAPSHOT',
-                'उत्पन्न, खर्च आणि निव्वळ परिणाम',
+                'उत्पन्न, सामान्य खर्च + आरोग्य/उपचार खर्च आणि निव्वळ परिणाम',
               ),
 
               pw.SizedBox(height: 9),
@@ -1213,7 +1234,7 @@ class _ReportsScreenState
 
               _pdfSectionHeader(
                 'EXPENSE ANALYTICS',
-                'खर्चाचे प्रकार आणि त्यांचे प्रमाण',
+                'सामान्य खर्चाचे प्रकार आणि त्यांचे प्रमाण',
               ),
 
               pw.SizedBox(height: 10),
@@ -1786,6 +1807,13 @@ class _ReportsScreenState
           ),
           pw.SizedBox(height: 9),
           _pdfFinancialBar(
+            'आरोग्य / उपचार खर्च',
+            _healthExpense,
+            maxValue,
+            PdfColors.orange,
+          ),
+          pw.SizedBox(height: 9),
+          _pdfFinancialBar(
             isProfit ? 'निव्वळ नफा' : 'निव्वळ तोटा',
             netProfit.abs(),
             maxValue,
@@ -2230,7 +2258,7 @@ class _ReportsScreenState
             ]),
           _pdfTableRow(
             [
-              'TOTAL',
+              'GENERAL EXPENSE TOTAL',
               '₹ ${total.toStringAsFixed(2)}',
               '100.0%',
             ],
@@ -2497,6 +2525,7 @@ class _ReportsScreenState
               borderRadius: pw.BorderRadius.circular(9),
             ),
             child: pw.Text(
+              'निव्वळ नफा = दूध उत्पन्न − (सामान्य खर्च + आरोग्य/उपचार खर्च). '
               'हा रिपोर्ट Satva Dhara ERP मधील निवडलेल्या कालावधीच्या नोंदींवर आधारित आहे. '
               'व्यवस्थापन निर्णय घेण्यापूर्वी आवश्यक नोंदींची पडताळणी करा.',
               style: pw.TextStyle(
@@ -2963,7 +2992,7 @@ class _ReportsScreenState
             icon: Icons.payments_outlined,
             title: 'एकूण खर्च',
             value: '₹ ${_totalExpense.toStringAsFixed(0)}',
-            subtitle: 'All recorded expenses',
+            subtitle: 'General + Health/Treatment',
             color: AppColors.error,
           ),
         ),
@@ -2975,7 +3004,7 @@ class _ReportsScreenState
                 : Icons.warning_amber_rounded,
             title: isProfit ? 'निव्वळ नफा' : 'निव्वळ तोटा',
             value: '₹ ${netProfit.abs().toStringAsFixed(0)}',
-            subtitle: 'Income − Expense',
+            subtitle: 'Income − (General + Health Expense)',
             color: isProfit
                 ? AppColors.primary
                 : AppColors.warning,
